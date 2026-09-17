@@ -667,6 +667,14 @@ class Dynavec:
         """Attach documents (their S3 Vectors embeddings) to an entity."""
         self.graph.link_docs(namespace, entity_id, list(doc_ids))
 
+    def graph_delete_edge(self, src, relation, dst, *, namespace="default"):
+        """Remove one edge: ``(src) -[relation]-> (dst)``."""
+        self.graph.delete_edge(namespace, src, relation, dst)
+
+    def graph_delete_node(self, entity_id, *, namespace="default"):
+        """Delete an entity and strip any inbound edges pointing at it."""
+        self.graph.delete_node(namespace, entity_id)
+
     def graph_neighbors(self, entity_id, *, namespace="default", relation=None, hops=1):
         """Breadth-first traversal returning reachable entity ids (excl. seed)."""
         visited = {entity_id}

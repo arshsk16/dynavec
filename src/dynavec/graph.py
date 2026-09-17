@@ -208,6 +208,54 @@ class GraphStore:
             UpdateExpression="SET docs = list_append(if_not_exists(docs, :empty), :d)",
             ExpressionAttributeValues={":d": list(doc_ids), ":empty": []},
         )
+    @retry()
+    def delete_edge(self, ns: str, src: str, relation: str, dst: str) -> None:
+        """Remove one edge from ``src``'s adjacency list.
+
+        Idempotent: if ``src`` doesn't exist, or no edge matches, this is a
+        no-op rather than an error.
+        """
+        node = self.get_node(ns, src)
+        if not node:
+            return
+        edges = node.get("edges", [])
+        filtered = [
+            e for e in edges if not (e.get("relation") == relation and e.get("target") == dst)
+        ]
+        if len(filtered) == len(edges):
+            return  # nothing matched; skip the write
+        self._table.update_item(
+            Key={"pk": self._node_pk(ns, src)},
+            UpdateExpression="SET edges = :e",
+            ExpressionAttributeValues={":e": filtered},
+        )
+
+    @retry()
+    def delete_node(self, ns: str, entity_id: str) -> None:
+        """Delete a node and strip any inbound edges pointing at it.
+
+        Edges are stored as embedded outbound adjacency lists (see module
+        docstring), so removing inbound references means walking every other
+        node in the namespace — the same scan :meth:`list_node_ids` already
+        does — and rewriting any adjacency list that targets ``entity_id``.
+
+        Idempotent: deleting an entity that doesn't exist is a no-op.
+        """
+        self._table.delete_item(Key={"pk": self._node_pk(ns, entity_id)})
+        for other_id in self.list_node_ids(ns):
+            if other_id == entity_id:
+                continue
+            other = self.get_node(ns, other_id)
+            if not other:
+                continue
+            edges = other.get("edges", [])
+            filtered = [e for e in edges if e.get("target") != entity_id]
+            if len(filtered) != len(edges):
+                self._table.update_item(
+                    Key={"pk": self._node_pk(ns, other_id)},
+                    UpdateExpression="SET edges = :e",
+                    ExpressionAttributeValues={":e": filtered},
+                )
 
     # ------------------------------------------------------------------ reads
     @retry()

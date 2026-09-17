@@ -275,3 +275,165 @@ def test_list_node_ids_escapes_the_namespace_into_the_prefix():
 
         assert store.list_node_ids("tenant#one") == []
         stub.assert_no_pending_responses()
+
+
+# --------------------------------------------------------- delete_edge (stubbed)
+def test_delete_edge_removes_only_the_matching_edge():
+    store, stubber = _stubbed_store()
+    with stubber as stub:
+        stub.add_response(
+            "get_item",
+            {
+                "Item": {
+                    "pk": {"S": "corp#node#acme"},
+                    "edges": {
+                        "L": [
+                            {"M": {"relation": {"S": "competes_with"}, "target": {"S": "globex"}}},
+                            {"M": {"relation": {"S": "supplies"}, "target": {"S": "initech"}}},
+                        ]
+                    },
+                }
+            },
+            {"TableName": "test-table", "Key": {"pk": "corp#node#acme"}},
+        )
+        stub.add_response(
+            "update_item",
+            {},
+            {
+                "TableName": "test-table",
+                "Key": {"pk": "corp#node#acme"},
+                "UpdateExpression": "SET edges = :e",
+                "ExpressionAttributeValues": {
+                    ":e": [{"relation": "supplies", "target": "initech"}]
+                },
+            },
+        )
+
+        store.delete_edge("corp", "acme", "competes_with", "globex")
+        stub.assert_no_pending_responses()
+
+
+def test_delete_edge_is_idempotent_when_no_edge_matches():
+    store, stubber = _stubbed_store()
+    with stubber as stub:
+        stub.add_response(
+            "get_item",
+            {
+                "Item": {
+                    "pk": {"S": "corp#node#acme"},
+                    "edges": {
+                        "L": [
+                            {"M": {"relation": {"S": "supplies"}, "target": {"S": "initech"}}},
+                        ]
+                    },
+                }
+            },
+            {"TableName": "test-table", "Key": {"pk": "corp#node#acme"}},
+        )
+
+        # no matching edge -> no update_item call at all (only get_item stubbed)
+        store.delete_edge("corp", "acme", "competes_with", "globex")
+        stub.assert_no_pending_responses()
+
+
+def test_delete_edge_is_idempotent_when_src_missing():
+    store, stubber = _stubbed_store()
+    with stubber as stub:
+        stub.add_response(
+            "get_item",
+            {},  # no "Item" key: node doesn't exist
+            {"TableName": "test-table", "Key": {"pk": "corp#node#ghost"}},
+        )
+
+        store.delete_edge("corp", "ghost", "competes_with", "globex")
+        stub.assert_no_pending_responses()
+
+
+# --------------------------------------------------------- delete_node (stubbed)
+def test_delete_node_deletes_item_and_strips_inbound_edges():
+    store, stubber = _stubbed_store()
+    scan_base = {
+        "TableName": "test-table",
+        "FilterExpression": "begins_with(pk, :prefix)",
+        "ExpressionAttributeValues": {":prefix": "corp#node#"},
+        "ProjectionExpression": "pk, entity_id",
+    }
+    with stubber as stub:
+        stub.add_response(
+            "delete_item", {}, {"TableName": "test-table", "Key": {"pk": "corp#node#globex"}}
+        )
+        stub.add_response(
+            "scan",
+            {
+                "Items": [
+                    {"pk": {"S": "corp#node#acme"}, "entity_id": {"S": "acme"}},
+                    {"pk": {"S": "corp#node#initech"}, "entity_id": {"S": "initech"}},
+                ]
+            },
+            scan_base,
+        )
+        # acme -> globex: has the inbound edge, gets rewritten
+        stub.add_response(
+            "get_item",
+            {
+                "Item": {
+                    "pk": {"S": "corp#node#acme"},
+                    "edges": {
+                        "L": [
+                            {"M": {"relation": {"S": "competes_with"}, "target": {"S": "globex"}}},
+                        ]
+                    },
+                }
+            },
+            {"TableName": "test-table", "Key": {"pk": "corp#node#acme"}},
+        )
+        stub.add_response(
+            "update_item",
+            {},
+            {
+                "TableName": "test-table",
+                "Key": {"pk": "corp#node#acme"},
+                "UpdateExpression": "SET edges = :e",
+                "ExpressionAttributeValues": {":e": []},
+            },
+        )
+        # initech -> unrelated edge, no inbound reference: read only, no write
+        stub.add_response(
+            "get_item",
+            {
+                "Item": {
+                    "pk": {"S": "corp#node#initech"},
+                    "edges": {
+                        "L": [
+                            {"M": {"relation": {"S": "supplies"}, "target": {"S": "acme"}}},
+                        ]
+                    },
+                }
+            },
+            {"TableName": "test-table", "Key": {"pk": "corp#node#initech"}},
+        )
+
+        store.delete_node("corp", "globex")
+        stub.assert_no_pending_responses()
+
+
+def test_delete_node_is_idempotent_when_entity_missing():
+    store, stubber = _stubbed_store()
+    with stubber as stub:
+        # DynamoDB DeleteItem on a nonexistent key already succeeds silently
+        stub.add_response(
+            "delete_item", {}, {"TableName": "test-table", "Key": {"pk": "corp#node#ghost"}}
+        )
+        stub.add_response(
+            "scan",
+            {"Items": []},
+            {
+                "TableName": "test-table",
+                "FilterExpression": "begins_with(pk, :prefix)",
+                "ExpressionAttributeValues": {":prefix": "corp#node#"},
+                "ProjectionExpression": "pk, entity_id",
+            },
+        )
+
+        store.delete_node("corp", "ghost")
+        stub.assert_no_pending_responses()
