@@ -52,6 +52,18 @@ class SearchResult:
             "text": self.text,
             "metadata": self.metadata,
         }
+@dataclass
+class IndexInfo:
+    """Snapshot of the provisioned S3 Vectors index + DynamoDB table."""
+
+    vector_bucket: str
+    index: str
+    dimension: int
+    distance_metric: str
+    table: str
+    table_status: str
+    non_filterable_keys: list[str] = field(default_factory=list)
+    item_count: int | None = None
 
 
 @dataclass

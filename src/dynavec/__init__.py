@@ -50,7 +50,7 @@ from .ingest import (
     XlsxSource,
     ingest,
 )
-from .models import Document, SearchResult, UpsertResult
+from .models import Document, IndexInfo, SearchResult, UpsertResult
 from .namespace import NamespaceView
 from .quantization import (
     OPQRotation,

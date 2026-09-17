@@ -50,7 +50,7 @@ from .metadata import build_s3_filter, generate_auto_metadata, split_metadata
 from .metrics import normalize_scores as normalize_metric_scores
 from .metrics import rescore as metric_rescore
 from .metrics import score as metric_score
-from .models import Document, SearchResult, UpsertResult
+from .models import Document, IndexInfo, SearchResult, UpsertResult
 from .namespace import NamespaceView
 from .provisioning import provision_all
 from .retrieval import distance_to_score, maximal_marginal_relevance, reciprocal_rank_fusion
@@ -129,6 +129,25 @@ class Dynavec:
     def provision(self) -> None:
         """Create the S3 vector bucket, index, and DynamoDB table (idempotent)."""
         provision_all(self.config, boto_session=self._session)
+
+    def describe(self) -> IndexInfo:
+        """Return the live bucket/index/table config, as provisioned in AWS."""
+        idx = self._vectors.get_index()["index"]
+        table_desc = self._docs._ddb.meta.client.describe_table(
+            TableName=self.config.table
+        )["Table"]
+        return IndexInfo(
+            vector_bucket=self.config.vector_bucket,
+            index=self.config.index,
+            dimension=idx["dimension"],
+            distance_metric=idx["distanceMetric"],
+            table=self.config.table,
+            table_status=table_desc["TableStatus"],
+            non_filterable_keys=idx.get("metadataConfiguration", {}).get(
+                "nonFilterableMetadataKeys", []
+            ),
+            item_count=table_desc.get("ItemCount"),
+        )
 
     def namespace(self, namespace: str) -> NamespaceView:
         """Return a handle with every op bound to ``namespace`` (namespace RAG)."""

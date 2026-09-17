@@ -241,6 +241,18 @@ Every write/read takes a `namespace`. dynavec tags each vector with its namespac
 
 `auto_provision=True` (or `db.provision()`) creates the S3 vector bucket, the vector index, and the DynamoDB table idempotently. The caller needs `s3vectors:*` on the bucket/index and `dynamodb:*` on the table (scope these down in production — see [ARCHITECTURE.md](ARCHITECTURE.md)). For supported AWS regions and regional configuration, see [REGIONS.md](docs/REGIONS.md).
 
+### Inspecting what's provisioned
+
+`db.describe()` returns an `IndexInfo` dataclass with the live bucket/index/table
+config — dimension, distance metric, non-filterable metadata keys, and the
+DynamoDB table's status and item count. Useful for a quick sanity check after
+`provision()`, or for debugging a dimension-mismatch in production.
+
+```python
+info = db.describe()
+print(info.dimension, info.distance_metric, info.table_status)
+```
+
 ---
 
 ## Benchmarks
