@@ -77,6 +77,7 @@ __all__ = [
     "DynavecConfig",
     "AWSCredentials",
     "Document",
+    "IndexInfo",
     "SearchResult",
     "UpsertResult",
     "NamespaceView",
